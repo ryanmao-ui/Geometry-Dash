@@ -14,7 +14,6 @@ const GAME_SPEED = 6;
 
 let player, obstacles, spikes, score, isGameOver, animationId;
 
-// Player object
 function createPlayer() {
     return {
         x: 100,
@@ -22,32 +21,32 @@ function createPlayer() {
         width: PLAYER_SIZE,
         height: PLAYER_SIZE,
         velocityY: 0,
-        isJumping: false
+        isJumping: false,
+        onGround: false
     };
 }
 
-// Obstacle factory
 function createObstacle(x) {
     return {
         x: x,
         y: canvas.height - GROUND_HEIGHT - OBSTACLE_HEIGHT,
         width: OBSTACLE_WIDTH,
         height: OBSTACLE_HEIGHT,
-        type: 'block'
+        type: 'block',
+        passed: false
     };
 }
 
-// Spike factory
 function createSpike(x) {
     return {
         x: x,
         y: canvas.height - GROUND_HEIGHT - SPIKE_SIZE,
         size: SPIKE_SIZE,
-        type: 'spike'
+        type: 'spike',
+        passed: false
     };
 }
 
-// Reset game
 function resetGame() {
     player = createPlayer();
     obstacles = [];
@@ -60,7 +59,6 @@ function resetGame() {
     gameLoop();
 }
 
-// Initial obstacles
 function spawnInitialObstacles() {
     let x = 800;
     for (let i = 0; i < 5; i++) {
@@ -73,23 +71,25 @@ function spawnInitialObstacles() {
     }
 }
 
-// Game loop
 function gameLoop() {
     animationId = requestAnimationFrame(gameLoop);
     update();
     draw();
 }
 
-// Update game objects
 function update() {
-    // Player movement
     if (!isGameOver) {
+        // Gravity
         player.velocityY += GRAVITY;
         player.y += player.velocityY;
+        player.onGround = false;
+
+        // Collisions with ground
         if (player.y > canvas.height - GROUND_HEIGHT - PLAYER_SIZE) {
             player.y = canvas.height - GROUND_HEIGHT - PLAYER_SIZE;
             player.velocityY = 0;
             player.isJumping = false;
+            player.onGround = true;
         }
 
         // Move obstacles and spikes
@@ -115,11 +115,46 @@ function update() {
             }
         }
 
-        // Collision Detection
+        // Collisions with obstacles (blocks)
+        let landedOnBlock = false;
         obstacles.forEach(ob => {
-            if (checkCollision(player, ob)) endGame();
+            // Check for landing on top of the block
+            const playerBottom = player.y + player.height;
+            const prevPlayerBottom = player.y + player.height - player.velocityY; // where was player last frame
+
+            if (
+                prevPlayerBottom <= ob.y && // was above block last frame
+                playerBottom >= ob.y && // now at or below top of block
+                player.x + player.width > ob.x && // x overlap
+                player.x < ob.x + ob.width
+            ) {
+                // Snap player to top of block
+                player.y = ob.y - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+                player.onGround = true;
+                landedOnBlock = true;
+            }
+            // Death: hitting side or bottom of block
+            else if (
+                player.x + player.width > ob.x &&
+                player.x < ob.x + ob.width &&
+                player.y < ob.y + ob.height &&
+                player.y + player.height > ob.y
+            ) {
+                const playerLeft = player.x;
+                const playerRight = player.x + player.width;
+                const blockLeft = ob.x;
+                const blockRight = ob.x + ob.width;
+
+                // If not landing on top, then it's a fatal collision (side or bottom)
+                if (!(player.y + player.height - 2 <= ob.y)) {
+                    endGame();
+                }
+            }
         });
 
+        // Collisions with spikes (always fatal)
         spikes.forEach(sp => {
             if (checkSpikeCollision(player, sp)) endGame();
         });
@@ -141,7 +176,6 @@ function update() {
     }
 }
 
-// Draw game objects
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -196,14 +230,6 @@ function draw() {
     }
 }
 
-// Collision detection (rectangle)
-function checkCollision(rect1, rect2) {
-    return rect1.x < rect2.x + rect2.width &&
-           rect1.x + rect1.width > rect2.x &&
-           rect1.y < rect2.y + rect2.height &&
-           rect1.y + rect1.height > rect2.y;
-}
-
 // Collision detection (triangle spike)
 function checkSpikeCollision(player, spike) {
     // Approximate using bounding box for simplicity
@@ -213,7 +239,6 @@ function checkSpikeCollision(player, spike) {
            player.y + player.height > spike.y;
 }
 
-// Game over
 function endGame() {
     isGameOver = true;
     cancelAnimationFrame(animationId);
@@ -223,7 +248,7 @@ function endGame() {
 // Controls
 document.addEventListener('keydown', e => {
     if (e.code === 'Space' || e.key === 'ArrowUp') {
-        if (!player.isJumping && !isGameOver) {
+        if (!player.isJumping && !isGameOver && player.onGround) {
             player.velocityY = JUMP_VELOCITY;
             player.isJumping = true;
         }
@@ -232,5 +257,4 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', resetGame);
 
-// Initial start
 resetGame();
